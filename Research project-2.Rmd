@@ -1,0 +1,434 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+```
+
+
+
+## R Markdown
+```{r}
+library(tidyverse)
+```
+
+```{r, eval=TRUE}
+data <- read.csv("League of Legends 2021 World Championship Play-In Groups Statistics - Raw Data.csv", header=T)
+```
+
+Below is the data by removing all undesired columns. Furthermore, let's create dummy variables for all of our categorical variables. Here, the variable "Predictor" has 5 possible values ("Top", "Mid", "Jungle", "AD", "Support"), so we will create a dummy variable that takes on value 1 whenever his role is "Mid" and 0 otherwise. On the other hand, the variable "Result" has 2 possible values ("W", "L"), so the dummy variable will take value 1 whenever it's W and 0 otherwise.
+```{r}
+clean_data <- data[ -c(1,2,3,5, 12, 15:19) ]
+clean_data$Position <- ifelse(clean_data$Position == 'Mid', 1, 0)
+clean_data$Result <- ifelse(clean_data$Result == 'W', 1, 0)
+clean_data$index <- c(1:220)
+clean_data
+```
+
+
+Create test/train set y splitting half half
+```{r}
+set.seed(1)
+train <- clean_data[sample(1:nrow(clean_data), nrow(clean_data)/2, replace=F), ]
+test <- clean_data[which(!(clean_data$index %in% train$index)),]
+
+train <- subset(train, select = -c(index) )
+test <- subset(test, select = -c(index))
+#Drop the column of index
+
+```
+
+Check whether the means and std deviations are the same for both sets
+```{r}
+mtr <- apply(train, 2, mean)
+sdtr <- apply(train, 2, sd)
+mtr
+
+mtest <- apply(test, 2, mean)
+sdtest <- apply(test, 2, sd)
+mtest
+```
+
+Variable | mean (s.d.) in training | mean (s.d.) in test
+---------|-------------------------|--------------------
+`r names(test)[3]` | `r round(mtr[1], 3)` (`r round(sdtr[1], 3)`) | `r round(mtest[1], 3)` (`r round(sdtest[1], 3)`)
+`r names(test)[4]` | `r round(mtr[2],3)` (`r round(sdtr[2],3)`) | `r round(mtest[2],3)` (`r round(sdtest[2],3)`)
+`r names(test)[5]` | `r round(mtr[3],3)` (`r round(sdtr[3],3)`) | `r round(mtest[3],3)` (`r round(sdtest[3],3)`)
+`r names(test)[6]` | `r round(mtr[4],3)` (`r round(sdtr[4],3)`) | `r round(mtest[4],3)` (`r round(sdtest[4],3)`)
+`r names(test)[7]` | `r round(mtr[5],3)` (`r round(sdtr[5],3)`) | `r round(mtest[5],3)` (`r round(sdtest[5],3)`)
+`r names(test)[8]` | `r round(mtr[6],3)` (`r round(sdtr[6],3)`) | `r round(mtest[6],3)` (`r round(sdtest[6],3)`)
+`r names(test)[9]` | `r round(mtr[7],3)` (`r round(sdtr[7],3)`) | `r round(mtest[7],3)` (`r round(sdtest[7],3)`)
+`r names(test)[10]` | `r round(mtr[8],3)` (`r round(sdtr[8],3)`) | `r round(mtest[8],3)` (`r round(sdtest[8],3)`)
+`r names(test)[11]` | `r round(mtr[9],3)` (`r round(sdtr[9],3)`) | `r round(mtest[9],3)` (`r round(sdtest[9],3)`)
+`r names(test)[12]` | `r round(mtr[10],3)` (`r round(sdtr[10],3)`) | `r round(mtest[10],3)` (`r round(sdtest[10],3)`)
+
+
+Let's perform some EDA by plotting the histogram of each variable. 
+```{r}
+hist(train$Position, main="Position", xlab="Position")
+hist(train$Kills, main="Kills", xlab="Kills")
+hist(train$Deaths, main="Deaths", xlab="Deaths")
+hist(train$Assists, main="Assists", xlab="Assists")
+hist(train$Creep.Score, main="Creep Score", xlab="Creep Score")
+hist(train$Champion.Damage.Share, main="Champion Damage Share", xlab="Champion Damage Share")
+hist(train$Wards.Placed, main="Wards Placed", xlab="Wards Placed")
+hist(train$Wards.Destroyed, main="Wards Destroyed", xlab="Wards Destroyed")
+hist(train$Result, main="Result", xlab="Result")
+
+hist(train$Gold.Earned, main="Gold Earned", xlab="Gold Earned")
+summary(train$Position)
+summary(train$Kills)
+summary(train$Deaths)
+summary(train$Assists)
+summary(train$Creep.Score)
+summary(train$Champion.Damage.Share)
+summary(train$Wards.Placed)
+summary(train$Wards.Destroyed)
+summary(train$Result)
+summary(train$Gold.Earned)
+
+```
+As we can see, the histogram of Gold Earned looks fairly normal (maybe slightly right skewed).
+
+
+
+Now, let's fit the linear model on the training set.
+```{r}
+full <- lm(Gold.Earned ~ ., data=train)
+summary(full)
+```
+-Good F-test
+-Good T-test
+-Position and Champion.Damage.Share are not linearly significant and have large standard errors, also result.
+Pretty good Adjusted R-squared
+
+
+
+
+Let's compute the Partial F-test on a subset model (excluding Position, Champion Damage Share), let's also a third model by removing deaths and result (in addition to Position, CDS)
+
+```{r}
+subset <- lm(Gold.Earned ~ Kills+ Deaths +Assists+Creep.Score+ Wards.Placed+Wards.Destroyed+ Result, data=train)
+subset2 <- lm(Gold.Earned ~ Kills+ +Assists+Creep.Score+ Wards.Placed+Wards.Destroyed, data=train)
+
+
+
+anova(subset, full)
+anova(subset2, full)
+```
+As you can see, the p-value is not less than 0.05, so we fail to reject the null hypothesis, meaning that Position and/or Champion Damage Share are not statistically significant.
+
+
+Now, let's recheck the summary our subset linear model
+```{r}
+summary(subset)
+```
+Now, we see that all predictors are linearly significant according to the F-test, t-test. Furthermore, the Adjusted R-squared stayed the same. The res std error increased a bit.
+
+
+
+Let's check if we satisfy the two extra conditions for both subset and subset2
+```{r}
+pairs(train)
+plot(train$Gold.Earned ~ fitted(subset), main="Y vs Fitted", xlab="Fitted", ylab="Gold Earned")
+lines(lowess(train$Gold.Earned ~ fitted(subset)), lty=2)
+abline(a = 0, b = 1)
+
+
+
+pairs(train)
+plot(train$Gold.Earned ~ fitted(subset2), main="Y vs Fitted", xlab="Fitted", ylab="Gold Earned")
+lines(lowess(train$Gold.Earned ~ fitted(subset2)), lty=2)
+abline(a = 0, b = 1)
+
+```
+Condition 1 seems to be fairly satisfied: the data points are relatively close to the identity line.
+
+Condition 2 seems also to be satisfied: the pairwise plots suggest that there aren't any distinguishable pattern. The only weird thing that's happening is when you're pairwise plotting two categorical predictors, you get like two vertical lines.
+
+
+Now, let's plot the residual plots and qq plots to check for assumption violations.
+```{r}
+r <- resid(subset2)
+
+#Residual vs fitted values
+plot(r~fitted(subset2), main="Residual vs fitted values", xlab="Fitted", ylab="Residual")
+
+
+#Residual vs predictors
+plot(r~train$Kills, main="Residual vs Kills", xlab="Kills", ylab="Residual")
+plot(r~train$Deaths, main="Residual vs Deaths", xlab="Deaths", ylab="Residual")
+plot(r~train$Assists, main="Residual vs Assists", xlab="Assists", ylab="Residual")
+plot(r~train$Creep.Score, main="Residual vs Creep Score", xlab="Creep Score", ylab="Residual")
+plot(r~train$Wards.Destroyed, main="Residual vs Wards Destroyed", xlab="Wards Destroyed", ylab="Residual")
+plot(r~train$Wards.Placed, main="Residual vs Wards Placed", xlab="Wards placed", ylab="Residual")
+plot(r~train$Result, main="Residual vs Result", xlab="Result", ylab="Residual")
+
+#qqplots
+qqnorm(r)
+qqline(r)
+```
+As you can see the residual plots for Wards Destroyed, Wards Placed, and Creep Score all seem to suggest some sort of clustering, which might indicate some assumption violations.
+
+
+Let's do a Cox-box transformation on the response.
+
+```{r}
+#Transforming only the response
+library(car)
+boxCox(subset)
+
+boxCox(subset2)
+
+
+
+```
+We see that we get an interval centered around ~0.7, so let's try a square root transformation.
+
+
+```{r}
+transformed_subset <-lm(I(sqrt(Gold.Earned)) ~  Kills+ Deaths +Assists+Creep.Score+ Wards.Placed+Wards.Destroyed+ Result, data=train)
+
+transformed_subset2 <- lm(I(sqrt(Gold.Earned)) ~  Kills +Assists+Creep.Score+ Wards.Placed+Wards.Destroyed, data=train)
+
+#transformed_subset
+summary(transformed_subset)
+r <- resid(transformed_subset)
+plot(r~fitted(transformed_subset), main="Residual vs fitted values", xlab="Fitted", ylab="Residual")
+
+
+#transformed_subset2
+summary(transformed_subset2)
+r <- resid(transformed_subset2)
+plot(r~fitted(transformed_subset2), main="Residual vs fitted values", xlab="Fitted", ylab="Residual")
+
+```
+After performing a Sqrt transformation, transformed_subset ended up with much much lower residual standard error (3.708), meaning that our model is fitting the data points really well.
+
+However, transformed_subset2 obtained similar residual standard error, adjusted R-squared, but also had very significant predictors.
+
+
+
+
+Check for the Leverage points, outliers, and influential points for both models.
+
+```{r}
+n <- nrow(train)
+p <- length(coef(transformed_subset))-1
+
+#Let's also add a new column to train by the sqrt of gold earned
+train$sqrt.gold.earned <- sqrt(train$Gold.Earned)
+
+
+#hat matrix
+h <- hatvalues(transformed_subset)
+
+#which values are leverage points
+hcut <- 2*(p+1)/n
+w1 <- which(h>hcut)
+w1
+
+#Plot
+par(mfrow=c(1,3))
+plot(train[,11]~train[,5], main="sqrt(Gold Earned) vs Creep Score", xlab="Creep Score", ylab="sqrt(def)")
+points(train[w1,11]~train[w1,5], col="red", pch=19)
+plot(train[,11]~train[,2], main="sqrt(Gold Earned) vs Kills", xlab="Kills", ylab="sqrt(def)")
+points(train[w1,11]~train[w1,2], col="red", pch=19)
+
+```
+As you can see the leverage points are not really isolated from the rest of the other data points.
+
+Check for outlier points:
+```{r}
+r <- rstandard(transformed_subset)
+
+
+w2 <- which(r < -2 | r > 2)
+w2
+
+par(mfrow=c(1,3))
+plot(train[,11]~train[,5], main="sqrt(Gold Earned) vs Creep Score", xlab="Creep Score", ylab="sqrt(def)")
+points(train[w2,11]~train[w2,5], col="red", pch=19)
+plot(train[,11]~train[,2], main="sqrt(Gold Earned) vs Kills", xlab="Kills", ylab="sqrt(def)")
+points(train[w2,11]~train[w2,2], col="red", pch=19)
+
+```
+Overall, they seem close to the other data points. 
+
+
+Now, let's check for influential points
+Second row indicates the influential points in the TRAIN set.
+```{r}
+#Cook's distance
+Dcutoff <- qf(0.5, p+1, n-p-1)
+D <- cooks.distance(transformed_subset)
+w3 <- which(D > Dcutoff)
+w3
+
+
+#Find the DFFITS and compare to cutoff (Influential points)
+DFFITScut <- 2*sqrt((p+1)/n)
+dfs <- dffits(transformed_subset)
+w4 <- which(abs(dfs) > DFFITScut)
+w4
+
+
+DFBETAcut <- 2/sqrt(n)
+dfb <- dfbetas(transformed_subset)
+w5 <- which(abs(dfb[,1]) >DFBETAcut)
+w5
+w6 <- which(abs(dfb[,2]) >DFBETAcut)
+w6
+w7 <- which(abs(dfb[,3]) >DFBETAcut)
+w8 <- which(abs(dfb[,4]) >DFBETAcut)
+w9 <- which(abs(dfb[,5]) >DFBETAcut)
+w10 <- which(abs(dfb[,6]) >DFBETAcut)
+w11 <- which(abs(dfb[,7]) >DFBETAcut)
+w12 <- which(abs(dfb[,8]) >DFBETAcut)
+
+
+
+
+
+
+
+#Let's just flag all that are influential and plot them.
+w <- unique(c(w4,w5,w6,w7,w8,w9,w10,w11,w12))
+par(mfrow=c(1,3))
+plot(train[,11]~train[,5], main="sqrt(Gold Earned) vs Creep Score", xlab="Creep Score", ylab="sqrt(def)")
+points(train[w,11]~train[w,5], col="red", pch=19)
+
+plot(train[,11]~train[,8], main="sqrt(Gold Earned) vs Wards Placed", xlab="Wards placed", ylab="sqrt(def)")
+points(train[w,11]~train[w,8], col="red", pch=19)
+
+
+plot(train[,11]~train[,9], main="sqrt(Gold Earned) vs Wards Destroyed", xlab="Wards Destroyed", ylab="sqrt(def)")
+points(train[w,11]~train[w,9], col="red", pch=19)
+```
+As you can see, most of these flagged points are not really problematic as they are relatively close to the other data points.
+
+
+Now, let's check multi-collinearity in both models (full vs subset). Recall full is the model with all predictors, whereas subset removes Position and Champion Damage Share
+
+```{r}
+library(car)
+vif(full)
+""
+vif(transformed_subset)
+""
+vif(transformed_subset2)
+
+
+```
+Very interesting, our vif actually decreased for each predictor that are in the subset model. This suggests that our predictors do not vary linearly with each other. Moreover, in transformed_subset2, we obtain better much lower vif. Everything is in favour of transformed_subset2.
+
+Now, let's check BIC/AIC just to obtain more evidence in favor of transformed_subset2.
+
+```{r}
+#AIC
+AIC(transformed_subset, transformed_subset2)
+
+
+#BIC
+BIC(transformed_subset, transformed_subset2)
+```
+Both models have similar AIC, while transformed_subset has slightly better AIC. Similarly, the BIC are similar. Overall, the transformed_subset2 is better.
+
+
+
+Now, let's build our test set using the same linear models (we have two models)
+
+```{r}
+testmod1 <- lm(I(sqrt(Gold.Earned)) ~  Kills+ Deaths +Assists+Creep.Score+ Wards.Placed+Wards.Destroyed+ Result, data=test)
+
+testmod2 <- lm(I(sqrt(Gold.Earned)) ~  Kills +Assists+Creep.Score+ Wards.Placed+Wards.Destroyed, data=test)
+
+```
+
+
+
+
+Now, let's compare everything
+
+```{r}
+#Model 1
+summary(transformed_subset)
+summary(testmod1)
+vif(testmod1)
+which(cooks.distance(testmod1)>qf(0.5, 4, 98-4))
+which(abs(dffits(testmod1)) > 2*sqrt(4/98))
+par(mfrow=c(2,2))
+plot(rstandard(testmod1)~test$Creep.Score)
+plot(rstandard(testmod1)~test$Kills)
+plot(rstandard(testmod1)~test$Deaths)
+plot(rstandard(testmod1)~test$Assists)
+plot(rstandard(testmod1)~test$Wards.Placed)
+plot(rstandard(testmod1)~test$Wards.Destroyed)
+
+qqnorm(rstandard(testmod1))
+qqline(rstandard(testmod1))
+
+```
+One of our residual vs Wards Placed graph looks a little problematic; there is clustering around 0-20, which might indicate violations of assumptions.
+
+
+```{r}
+#Model 2
+summary(transformed_subset2)
+summary(testmod2)
+vif(testmod2)
+which(cooks.distance(testmod2)>qf(0.5, 4, 98-4))
+which(abs(dffits(testmod2)) > 2*sqrt(4/98))
+par(mfrow=c(2,2))
+plot(rstandard(testmod2)~test$Creep.Score)
+plot(rstandard(testmod2)~test$Kills)
+plot(rstandard(testmod2)~test$Assists)
+plot(rstandard(testmod2)~test$Wards.Placed)
+plot(rstandard(testmod2)~test$Wards.Destroyed)
+
+qqnorm(rstandard(testmod2))
+qqline(rstandard(testmod2))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```
+One of the issues is that Wards.Destroyed no longer linearly significant to the squared root response, other things are similar, still maybe assumptions violations when it comes to the residuals of Wards.Placed.
+
+
+
+
+
+
+------------------------------------
+Let us first plot a few predictors one-on-one against our response variable to get a better grasp of the situation. Furthermore, let us plot a box plot.
+```{r}
+plot(clean_data$Gold.Earned ~ clean_data$Kills, main="Gold earned vs Kills", xlab="Kills", ylab="Gold earned")
+plot(clean_data$Gold.Earned ~ clean_data$Creep.Score, main="Gold earned vs Creep score", xlab="Creep score", ylab="Gold earned")
+
+boxplot(clean_data$Gold.Earned ~ clean_data$Result, main="Gold Earned vs game result", xlab="Game result",
+        ylab="Gold Earned", names=c("Loss", "Win"))
+
+
+```
+```{r}
+summary(clean_data)
+```
+Let us first plot a few predictors one-on-one against our response variable to get a better grasp of the situation. Furthermore, let us plot a box plot.
